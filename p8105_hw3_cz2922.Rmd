@@ -40,9 +40,11 @@ ny_noaa |>
     )
   )
 ```
-The `ny_noaa` dataset contains 2,595,176 observations and 7 variables, representing daily weather measurements collected at weather stations in New York State. Each observation corresponds to a particular station and date.
+The `ny_noaa` dataset contains 2,595,176 observations and 7 variables, representing daily weather measurements collected at weather stations in New York State. Each observation corresponds to a particular weather station and date.
 
-The dataset includes station identifiers (`id`), observation dates (`date`), precipitation (`prcp`), snowfall (`snow`), snow depth (`snwd`), maximum daily temperature (`tmax`), and minimum daily temperature (`tmin`). The data contain missing values in several weather measurements, which must be considered when summarizing and visualizing the dataset.
+The dataset includes station identifiers (`id`), observation dates (`date`), precipitation (`prcp`), snowfall (`snow`), snow depth (`snwd`), maximum daily temperature (`tmax`), and minimum daily temperature (`tmin`).
+
+Missing data are a substantial concern, particularly for temperature measurements. Approximately 43.7% of maximum and minimum temperature observations are missing. Missing values also account for approximately 22.8% of snow depth measurements, 14.7% of snowfall measurements, and 5.6% of precipitation measurements. These missing observations may affect the representativeness of summaries and visualizations, especially when comparing temperatures across stations and years.
 
 ## Data cleaning
 
@@ -124,6 +126,7 @@ noaa_clean |>
 The hexbin plot shows a strong positive relationship between daily minimum and maximum temperatures. Days with higher minimum temperatures generally also have higher maximum temperatures. Most observations are concentrated along a diagonal band, indicating a relatively consistent relationship between the two temperature measurements.
 
 A few observations fall far outside the main cluster, suggesting unusually extreme temperatures or possible measurement errors. The hexbin visualization is particularly useful for this large dataset because it reveals observation density without the substantial overplotting associated with a traditional scatterplot.
+
 ## Snowfall distribution by year
 
 ```{r noaa-snowfall-year, fig.width=10, fig.height=5}
@@ -165,7 +168,7 @@ dim(nhanes_covar)
 dim(nhanes_accel)
 
 names(nhanes_covar)
-names(nhanes_accel)
+names(nhanes_accel)[1:10]
 ```
 
 ## Clean and merge NHANES data
@@ -404,6 +407,16 @@ citibike |>
   count(year, month)
 ```
 
+The cleaned Citi Bike dataset contains 99,485 sampled rides from January and July of 2020 and 2024, with nine variables. Each row represents an individual bike ride.
+
+The dataset includes a unique ride identifier (`ride_id`), bike type (`rideable_type`), day of the week (`weekdays`), ride duration (`duration`), starting and ending station names (`start_station_name` and `end_station_name`), membership status (`member_casual`), year, and month.
+
+The data include 12,420 rides from January 2020, 21,048 from July 2020, 18,861 from January 2024, and 47,156 from July 2024. Year, month, and membership status were converted to factors to facilitate comparisons across groups.
+
+Because these data represent a 1% sample of eligible rides lasting less than four hours, the findings describe the sampled trips rather than the complete Citi Bike system.
+
+Missing data are minimal in the Citi Bike dataset. Only 43 observations (0.04%) have missing starting station names, and 207 observations (0.21%) have missing ending station names. All other variables are complete. Rides with missing starting station names were excluded only when identifying the five most popular starting stations. These observations were retained in other analyses because their ride duration, membership status, bike type, and temporal information were available.
+
 ## Number of rides by year, month, and membership
 
 ```{r citibike-membership-table}
@@ -484,6 +497,7 @@ Median ride duration varies by weekday, month, and year. In both 2020 and 2024, 
 Weekend rides, particularly on Saturdays and Sundays, tended to have higher median durations than weekday rides. This pattern was especially pronounced in July 2020, when median ride durations on weekends reached approximately 16.5 minutes.
 
 Median ride durations were generally shorter in 2024 than in 2020, particularly during July. These differences may reflect changes in rider behavior, trip purposes, or the bike-sharing system over time. However, the descriptive results do not establish the causes of these differences.
+
 ## Ride duration by month, membership, and bike type in 2024
 
 ```{r citibike-bike-duration, fig.width=11, fig.height=5}
@@ -517,8 +531,10 @@ citibike |>
     strip.text = element_text(size = 11)
   )
 ```
-The distribution of ride duration in 2024 varies by month, membership status, and bike type. Casual riders generally have longer median ride durations and greater variability than Citi Bike members for both classic and electric bikes. This may suggest that casual riders are more likely to use Citi Bike for recreational purposes, while members may use it more frequently for shorter, routine trips.
+The distribution of ride duration in 2024 varies by month, membership status, and bike type. Casual riders consistently have longer median ride durations than Citi Bike members across both months and bike types. This pattern may suggest differences in trip purposes, with casual riders potentially using Citi Bike more frequently for recreational trips.
 
-Ride durations also tend to be slightly longer in July than in January, particularly among casual riders. Classic bike rides generally have somewhat longer durations than electric bike rides, especially for casual users.
+Median ride durations are higher in July than in January across all membership and bike type combinations. Among casual riders, classic bikes have longer median ride durations than electric bikes, while the opposite pattern is observed among members.
 
-Across all groups, the distributions are right-skewed, with numerous longer rides appearing as outliers. Overall, membership status appears to be associated with a more noticeable difference in ride duration than bike type, although these descriptive comparisons do not establish causal relationships.
+For example, in July 2024, casual riders had median durations of 15.60 minutes on classic bikes and 12.90 minutes on electric bikes, compared with 7.68 and 9.24 minutes, respectively, among members.
+
+The boxplots also show right-skewed distributions with numerous long-duration outliers. Overall, membership status and month are associated with noticeable differences in ride duration, while the relationship between bike type and duration varies by membership status. These descriptive findings do not establish causal relationships.
