@@ -1,0 +1,524 @@
+---
+title: "P8105 Homework 3"
+author: "Cecilia Zhu"
+output: github_document
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(p8105.datasets)
+library(knitr)
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Problem 1
+
+## Load and examine the data
+
+```{r noaa-data}
+data("ny_noaa")
+
+dim(ny_noaa)
+names(ny_noaa)
+head(ny_noaa)
+```
+
+## Dataset structure and missing values
+
+```{r noaa-missing}
+glimpse(ny_noaa)
+
+ny_noaa |>
+  summarize(
+    across(
+      everything(),
+      ~ sum(is.na(.x))
+    )
+  )
+```
+The `ny_noaa` dataset contains 2,595,176 observations and 7 variables, representing daily weather measurements collected at weather stations in New York State. Each observation corresponds to a particular station and date.
+
+The dataset includes station identifiers (`id`), observation dates (`date`), precipitation (`prcp`), snowfall (`snow`), snow depth (`snwd`), maximum daily temperature (`tmax`), and minimum daily temperature (`tmin`). The data contain missing values in several weather measurements, which must be considered when summarizing and visualizing the dataset.
+
+## Data cleaning
+
+```{r noaa-clean}
+noaa_clean = ny_noaa |>
+  mutate(
+    year = lubridate::year(date),
+    month = lubridate::month(date),
+    day = lubridate::day(date),
+    tmax = as.numeric(tmax) / 10,
+    tmin = as.numeric(tmin) / 10,
+    prcp = prcp / 10
+  ) |>
+  relocate(year, month, day, .after = date)
+
+glimpse(noaa_clean)
+```
+
+## Most common snowfall values
+
+```{r noaa-snowfall}
+noaa_clean |>
+  count(snow, sort = TRUE) |>
+  head(10) |>
+  knitr::kable(
+    col.names = c("Snowfall (mm)", "Number of observations"),
+    caption = "Ten Most Common Snowfall Values"
+  )
+```
+The most commonly observed snowfall value is 0 mm (2,008,508 observations), followed by missing values (381,221 observations) and 25 mm (31,022 observations). The high frequency of 0 mm is expected because snowfall is seasonal in New York, and most days do not experience snow. The relatively large number of missing values suggests incomplete snowfall reporting. The frequent occurrence of 25 mm may reflect the reporting and rounding of snowfall measurements, as 25 mm is approximately one inch.
+
+## Average maximum temperature in January and July
+
+```{r noaa-temp-month, fig.width=10, fig.height=5}
+noaa_clean |>
+  filter(month %in% c(1, 7)) |>
+  group_by(id, year, month) |>
+  summarize(
+    mean_tmax = mean(tmax, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    month = factor(
+      month,
+      levels = c(1, 7),
+      labels = c("January", "July")
+    )
+  ) |>
+  ggplot(aes(x = year, y = mean_tmax, group = id)) +
+  geom_line(alpha = 0.2, color = "steelblue") +
+  facet_grid(. ~ month) +
+  labs(
+    title = "Average Maximum Temperature by Station and Year",
+    x = "Year",
+    y = "Average Maximum Temperature (°C)"
+  ) +
+  theme_minimal()
+```
+The plot shows a clear seasonal difference in average maximum temperatures between January and July. January temperatures are generally much lower, with most station averages ranging from approximately -5°C to 5°C, while July temperatures are typically between 25°C and 30°C.
+
+Temperature patterns across stations appear relatively consistent, with many stations showing similar year-to-year fluctuations. This suggests that regional weather patterns influence temperatures across New York State. Some unusually low temperatures are visible, particularly in July, which may reflect unusual weather conditions, differences in station locations, or potential measurement anomalies. There is no clear long-term trend that can be confidently established from this plot alone.
+
+## Maximum vs. minimum temperature
+
+```{r noaa-temp-hex, fig.width=8, fig.height=6}
+noaa_clean |>
+  filter(!is.na(tmax), !is.na(tmin)) |>
+  ggplot(aes(x = tmin, y = tmax)) +
+  geom_hex(bins = 50) +
+  scale_fill_viridis_c() +
+  labs(
+    title = "Maximum vs. Minimum Daily Temperature",
+    x = "Minimum Temperature (°C)",
+    y = "Maximum Temperature (°C)",
+    fill = "Count"
+  ) +
+  theme_minimal()
+```
+The hexbin plot shows a strong positive relationship between daily minimum and maximum temperatures. Days with higher minimum temperatures generally also have higher maximum temperatures. Most observations are concentrated along a diagonal band, indicating a relatively consistent relationship between the two temperature measurements.
+
+A few observations fall far outside the main cluster, suggesting unusually extreme temperatures or possible measurement errors. The hexbin visualization is particularly useful for this large dataset because it reveals observation density without the substantial overplotting associated with a traditional scatterplot.
+## Snowfall distribution by year
+
+```{r noaa-snowfall-year, fig.width=10, fig.height=5}
+noaa_clean |>
+  filter(snow > 0, snow < 100) |>
+  ggplot(aes(x = factor(year), y = snow)) +
+  geom_violin(fill = "lightblue", color = "steelblue") +
+  labs(
+    title = "Distribution of Snowfall by Year",
+    x = "Year",
+    y = "Snowfall (mm)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+The violin plots show that snowfall distributions are relatively consistent across years. Observations are concentrated around several distinct values, particularly approximately 25 mm, 50 mm, and 75 mm, rather than being distributed uniformly.
+
+These concentrations may reflect the rounding or conversion of snowfall measurements from inches to millimeters. Although some variation is visible across years, there is no obvious long-term shift in the distribution of snowfall amounts between 1981 and 2010. This plot describes the distribution of individual snowfall measurements and does not directly indicate changes in total annual snowfall.
+
+# Problem 2
+
+## Load NHANES data
+
+```{r nhanes-load}
+nhanes_covar = read_csv(
+  "data/nhanes_covar.csv",
+  skip = 4,
+  show_col_types = FALSE
+)
+
+nhanes_accel = read_csv(
+  "data/nhanes_accel.csv",
+  show_col_types = FALSE
+)
+
+dim(nhanes_covar)
+dim(nhanes_accel)
+
+names(nhanes_covar)
+names(nhanes_accel)
+```
+
+## Clean and merge NHANES data
+
+```{r nhanes-clean}
+nhanes_clean = nhanes_covar |>
+  filter(
+    age >= 21,
+    complete.cases(SEQN, sex, age, BMI, education)
+  ) |>
+  mutate(
+    sex = factor(
+      sex,
+      levels = c(1, 2),
+      labels = c("Male", "Female")
+    ),
+    education = factor(
+      education,
+      levels = c(1, 2, 3),
+      labels = c(
+        "Less than high school",
+        "High school equivalent",
+        "More than high school"
+      )
+    )
+  ) |>
+  inner_join(nhanes_accel, by = "SEQN")
+
+dim(nhanes_clean)
+
+nhanes_clean |>
+  select(SEQN, sex, age, BMI, education) |>
+  head(10)
+```
+
+## Distribution of sex by education level
+
+```{r nhanes-demographic-table}
+nhanes_clean |>
+  count(education, sex) |>
+  pivot_wider(
+    names_from = sex,
+    values_from = n,
+    values_fill = 0
+  ) |>
+  knitr::kable(
+    col.names = c("Education Level", "Male", "Female"),
+    caption = "Number of Participants by Sex and Education Level"
+  )
+```
+After excluding participants younger than 21 years and those with missing demographic information, the final dataset includes 228 participants, consisting of 118 men and 110 women.
+
+The largest education category is "More than high school," with 115 participants (56 men and 59 women). The "Less than high school" group includes 55 participants, with nearly equal numbers of men and women. The "High school equivalent" group includes 58 participants, with more men (35) than women (23). Overall, the sample is relatively balanced by sex, although the distribution varies across education categories.
+
+## Age distribution by sex and education
+
+```{r nhanes-age-distribution, fig.width=10, fig.height=5}
+nhanes_clean |>
+  ggplot(aes(x = sex, y = age, fill = sex)) +
+  geom_violin(alpha = 0.6, trim = FALSE) +
+  geom_boxplot(
+    width = 0.15,
+    alpha = 0.8,
+    outlier.shape = NA
+  ) +
+  facet_wrap(~ education, nrow = 1) +
+  labs(
+    title = "Age Distribution by Sex and Education Level",
+    x = "Sex",
+    y = "Age (years)",
+    fill = "Sex"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 11)
+  )
+```
+The age distributions vary across education levels and between men and women. Participants with less than a high school education have relatively similar age distributions across sexes, with median ages around the late 50s. In the high school equivalent group, women tend to be slightly older than men.
+
+In contrast, participants with more than a high school education tend to be younger, particularly women, whose ages are more concentrated around their 30s and 40s. Overall, the plot suggests that age distributions differ by education level, although there is substantial overlap between groups.
+
+## Total daily activity
+
+```{r nhanes-total-activity}
+nhanes_total = nhanes_clean |>
+  mutate(
+    total_activity = rowSums(
+      pick(starts_with("min")),
+      na.rm = TRUE
+    )
+  ) |>
+  select(SEQN, sex, age, BMI, education, total_activity)
+
+glimpse(nhanes_total)
+
+summary(nhanes_total$total_activity)
+```
+
+## Total daily activity by age, sex, and education
+
+```{r nhanes-activity-age, fig.width=11, fig.height=5}
+nhanes_total |>
+  ggplot(aes(x = age, y = total_activity, color = sex)) +
+  geom_point(alpha = 0.6, size = 1.8) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    linewidth = 1
+  ) +
+  facet_wrap(~ education, nrow = 1) +
+  labs(
+    title = "Total Daily Activity by Age, Sex, and Education Level",
+    x = "Age (years)",
+    y = "Total Daily Activity (MIMS)",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 11)
+  )
+```
+Overall, total daily activity tends to decrease with age, although the relationship varies across education levels and between men and women.
+
+Among participants with less than a high school education, both men and women generally show declining activity with increasing age. In the high school equivalent group, the smoothed trends fluctuate more noticeably, particularly among women. For participants with more than a high school education, activity levels are relatively similar between sexes at younger ages but generally decrease among older participants.
+
+There is considerable individual variation in total activity, and the differences between men and women are not consistent across all education categories. The fluctuations in the smoothed curves should be interpreted cautiously because some age-sex groups contain relatively few participants.
+
+## Tidy minute-level accelerometer data
+
+```{r nhanes-long}
+nhanes_long = nhanes_clean |>
+  pivot_longer(
+    cols = starts_with("min"),
+    names_to = "minute",
+    values_to = "MIMS"
+  ) |>
+  mutate(
+    minute = as.numeric(str_remove(minute, "min")),
+    hour = minute / 60
+  )
+
+dim(nhanes_long)
+
+nhanes_long |>
+  select(SEQN, sex, age, education, minute, hour, MIMS) |>
+  head(10)
+```
+
+## 24-hour activity patterns by education and sex
+
+```{r nhanes-activity-time, fig.width=11, fig.height=5}
+nhanes_long |>
+  group_by(education, sex, hour) |>
+  summarize(
+    mean_MIMS = mean(MIMS, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  ggplot(aes(x = hour, y = mean_MIMS, color = sex)) +
+  geom_line(alpha = 0.5) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    linewidth = 1
+  ) +
+  facet_wrap(~ education, nrow = 1) +
+  scale_x_continuous(
+    breaks = seq(0, 24, by = 4),
+    limits = c(0, 24)
+  ) +
+  labs(
+    title = "24-Hour Activity Patterns by Education and Sex",
+    x = "Hour of Day",
+    y = "Average MIMS per Minute",
+    color = "Sex"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 11)
+  )
+```
+The 24-hour activity profiles show a clear daily pattern across all three education levels. Average physical activity is lowest during the nighttime and early morning hours, increases rapidly after approximately 5–6 AM, remains relatively high during the daytime, and gradually declines in the evening.
+
+In the less than high school group, men and women have broadly similar activity patterns, with both reaching peak activity around midday. In the high school equivalent and more than high school groups, women generally show slightly higher average activity during parts of the daytime, although the differences are not consistent throughout the day.
+
+Overall, the daily activity patterns are relatively similar across education levels, suggesting that time of day is an important factor associated with physical activity. Differences by sex and education are present, but these descriptive patterns do not necessarily imply statistically significant differences.
+
+# Problem 3
+
+## Import and clean Citi Bike data
+
+```{r citibike-clean}
+citi_files = tibble(
+  file = c(
+    "Jan 2020 Citi.csv",
+    "July 2020 Citi.csv",
+    "Jan 2024 Citi.csv",
+    "July 2024 Citi.csv"
+  ),
+  year = c(2020, 2020, 2024, 2024),
+  month = c("January", "July", "January", "July")
+)
+
+citibike = citi_files |>
+  mutate(
+    data = map(
+      file,
+      ~ read_csv(
+        file.path("data/citibike", .x),
+        show_col_types = FALSE
+      )
+    )
+  ) |>
+  unnest(data) |>
+  mutate(
+    year = factor(year, levels = c(2020, 2024)),
+    month = factor(
+      month,
+      levels = c("January", "July")
+    ),
+    member_casual = factor(
+      member_casual,
+      levels = c("member", "casual"),
+      labels = c("Member", "Casual")
+    )
+  ) |>
+  select(-file)
+
+dim(citibike)
+
+glimpse(citibike)
+
+citibike |>
+  count(year, month)
+```
+
+## Number of rides by year, month, and membership
+
+```{r citibike-membership-table}
+citibike |>
+  count(year, month, member_casual) |>
+  pivot_wider(
+    names_from = member_casual,
+    values_from = n,
+    values_fill = 0
+  ) |>
+  knitr::kable(
+    col.names = c("Year", "Month", "Member", "Casual"),
+    caption = "Number of Citi Bike Rides by Year, Month, and Membership"
+  )
+```
+Citi Bike members accounted for the majority of rides in all four months. The number of rides was substantially higher in July than in January in both 2020 and 2024, suggesting a strong seasonal pattern in bike-sharing usage.
+
+Ridership also increased considerably between 2020 and 2024. July 2024 had the highest number of rides, with 36,262 member rides and 10,894 casual rides. Although casual ridership increased substantially during the summer, members remained the dominant user group. These results suggest increasing Citi Bike usage over time, particularly during warmer months. Because the dataset contains a 1% sample of rides, the counts represent sampled rides rather than system-wide totals.
+
+## Five most popular starting stations in July 2024
+
+```{r citibike-top-stations}
+citibike |>
+  filter(year == "2024", month == "July") |>
+  filter(!is.na(start_station_name)) |>
+  count(start_station_name, sort = TRUE) |>
+  slice_head(n = 5) |>
+  knitr::kable(
+    col.names = c("Starting Station", "Number of Rides"),
+    caption = "Five Most Popular Citi Bike Starting Stations in July 2024"
+  )
+```
+The most popular starting station in July 2024 was Pier 61 at Chelsea Piers, with 163 rides in the sample, followed by University Pl & E 14 St (155 rides) and W 21 St & 6 Ave (152 rides). These stations are located in busy Manhattan neighborhoods, suggesting that access to recreational areas, commercial destinations, and transportation connections may contribute to higher Citi Bike usage. However, station popularity may also depend on bike availability and station capacity.
+
+## Median ride duration by weekday, month, and year
+
+```{r citibike-weekday-duration, fig.width=11, fig.height=5}
+citibike |>
+  mutate(
+    weekdays = factor(
+      weekdays,
+      levels = c(
+        "Monday", "Tuesday", "Wednesday",
+        "Thursday", "Friday", "Saturday", "Sunday"
+      )
+    )
+  ) |>
+  group_by(year, month, weekdays) |>
+  summarize(
+    median_duration = median(duration, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  ggplot(
+    aes(
+      x = weekdays,
+      y = median_duration,
+      color = month,
+      group = month
+    )
+  ) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_wrap(~ year, nrow = 1) +
+  labs(
+    title = "Median Citi Bike Ride Duration by Weekday, Month, and Year",
+    x = "Day of Week",
+    y = "Median Ride Duration (minutes)",
+    color = "Month"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+```
+Median ride duration varies by weekday, month, and year. In both 2020 and 2024, rides in July generally lasted longer than rides in January, suggesting that warmer weather may be associated with longer cycling trips.
+
+Weekend rides, particularly on Saturdays and Sundays, tended to have higher median durations than weekday rides. This pattern was especially pronounced in July 2020, when median ride durations on weekends reached approximately 16.5 minutes.
+
+Median ride durations were generally shorter in 2024 than in 2020, particularly during July. These differences may reflect changes in rider behavior, trip purposes, or the bike-sharing system over time. However, the descriptive results do not establish the causes of these differences.
+## Ride duration by month, membership, and bike type in 2024
+
+```{r citibike-bike-duration, fig.width=11, fig.height=5}
+citibike |>
+  filter(year == "2024") |>
+  mutate(
+    rideable_type = factor(rideable_type)
+  ) |>
+  ggplot(
+    aes(
+      x = month,
+      y = duration,
+      fill = member_casual
+    )
+  ) +
+  geom_boxplot(
+    alpha = 0.7,
+    outlier.alpha = 0.1
+  ) +
+  facet_wrap(~ rideable_type, nrow = 1) +
+  coord_cartesian(ylim = c(0, 60)) +
+  labs(
+    title = "Ride Duration by Month, Membership, and Bike Type in 2024",
+    x = "Month",
+    y = "Ride Duration (minutes)",
+    fill = "Membership"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    strip.text = element_text(size = 11)
+  )
+```
+The distribution of ride duration in 2024 varies by month, membership status, and bike type. Casual riders generally have longer median ride durations and greater variability than Citi Bike members for both classic and electric bikes. This may suggest that casual riders are more likely to use Citi Bike for recreational purposes, while members may use it more frequently for shorter, routine trips.
+
+Ride durations also tend to be slightly longer in July than in January, particularly among casual riders. Classic bike rides generally have somewhat longer durations than electric bike rides, especially for casual users.
+
+Across all groups, the distributions are right-skewed, with numerous longer rides appearing as outliers. Overall, membership status appears to be associated with a more noticeable difference in ride duration than bike type, although these descriptive comparisons do not establish causal relationships.
